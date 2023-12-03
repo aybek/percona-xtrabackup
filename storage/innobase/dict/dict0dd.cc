@@ -528,7 +528,7 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
     if (dd_col->is_virtual()) {
       n_v_cols++;
       if (dd_col->is_array()) {
-         n_m_v_cols++;
+        n_m_v_cols++;
       }
     }
   }
@@ -898,8 +898,7 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
   IF_DEBUG(uint32_t crv = 0;)
   /* If table has INSTANT DROP columns, add them now. */
   if (table->has_instant_drop_cols()) {
-    fill_dict_dropped_columns(&dd_table->table(), table,
-                              IF_DEBUG(crv, ) heap);
+    fill_dict_dropped_columns(&dd_table->table(), table, IF_DEBUG(crv, ) heap);
   }
 
   /* add instant column default value */
@@ -980,8 +979,10 @@ dict_table_t *dd_table_create_on_dd_obj(const dd::Table *dd_table,
         if (c == dd_col) break;
         if (c->is_virtual() == dd_col->is_virtual()) col_pos++;
       }
-
-      bool is_asc = (idx_elem->order() == dd::Index_element::ORDER_ASC);
+      /* FULLTEXT and HASH indexes can have UNDEF order, we should treat UNDEF
+       * as ASC */
+      bool is_asc = (idx_elem->order() == dd::Index_element::ORDER_ASC ||
+                     idx_elem->order() == dd::Index_element::ORDER_UNDEF);
       ulint prefix_len = 0;
 
       if (dd_index->type() == dd::Index::IT_SPATIAL) {
@@ -2388,9 +2389,9 @@ static bool format_validate(THD *thd, const TABLE *form, row_type real_type,
   const ulint zip_ssize_max =
       std::min((ulint)UNIV_PAGE_SSIZE_MAX, (ulint)PAGE_ZIP_SSIZE_MAX);
   const char *zip_refused = zip_allowed ? nullptr
-                                        : srv_page_size <= UNIV_ZIP_SIZE_MAX
-                                              ? "innodb_file_per_table=OFF"
-                                              : "innodb_page_size>16k";
+                            : srv_page_size <= UNIV_ZIP_SIZE_MAX
+                                ? "innodb_file_per_table=OFF"
+                                : "innodb_page_size>16k";
   bool invalid = false;
 
   if (real_type == ROW_TYPE_NOT_USED) {
@@ -8824,7 +8825,6 @@ static void get_table_parts(const std::string &dict_name, std::string &schema,
       to_lower(part);
       to_lower(sub_part);
     }
-
 
     /* Build partition string. No conversion required. */
     partition.clear();

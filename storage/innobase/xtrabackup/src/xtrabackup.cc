@@ -5542,9 +5542,9 @@ static bool xtrabackup_apply_ren(
     }
     // rename .delta .meta files as well
     if (xtrabackup_incremental) {
-      std::string from_delta = old_path + ".delta";
+      std::string from_delta = oldpath + ".delta";
       std::string to_delta = entry.datadir + ren_file_content + ".delta";
-      std::string from_meta = old_path + ".meta";
+      std::string from_meta = oldpath + ".meta";
       std::string to_meta = entry.datadir + ren_file_content + ".meta";
 
       rename_force(from_delta, to_delta);

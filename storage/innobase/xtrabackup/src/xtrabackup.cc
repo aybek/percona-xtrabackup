@@ -6796,6 +6796,7 @@ skip_check:
         goto error_cleanup;
   }
   xb_data_files_close();
+  xb::info() << "Processing .ren files completed!";
 //-------------------------------------------------------
   if (xtrabackup_incremental) {
     Tablespace_map::instance().deserialize(xtrabackup_incremental_dir);

@@ -6796,13 +6796,14 @@ skip_check:
         goto error_cleanup;
   }
   xb_data_files_close();
-  trx_pool_close();
   fil_close();
-  os_thread_close();
-  sync_check_close();
-  os_event_global_destroy();
+  innodb_free_param();
 
   xb::info() << "Processing .ren files completed!";
+
+  if (innodb_init_param()) {
+    goto error_cleanup;
+  }
 //-------------------------------------------------------
   if (xtrabackup_incremental) {
     Tablespace_map::instance().deserialize(xtrabackup_incremental_dir);

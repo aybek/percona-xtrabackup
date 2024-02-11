@@ -5553,36 +5553,36 @@ static bool prepare_handle_new_files(
 }
 
 /* Handle DDL for renamed files */
-static bool prepare_handle_ren_files(
-    const datadir_entry_t &entry, /*!<in: datadir entry */
-    void *arg __attribute__((unused))) {
-  if (entry.is_empty_dir) return true;
+// static bool prepare_handle_ren_files(
+//     const datadir_entry_t &entry, /*!<in: datadir entry */
+//     void *arg __attribute__((unused))) {
+//   if (entry.is_empty_dir) return true;
 
-  std::string ren_file = entry.path;
-  std::string ren_path = entry.rel_path;
-  std::string from_base = entry.datadir;
-  std::string to_base = entry.datadir;
-#ifdef UNIV_DEBUG
-  size_t index = ren_file.find(".ren");
-  assert(index != std::string::npos);
-#endif  // UNIV_DEBUG
-  std::string from = ren_path.substr(0, ren_path.length() - 4);
-  from_base += from;
-  std::string to = read_file_as_string(ren_file);
-  to_base += to;
-  if (to.empty()) {
-    xb::error() << "Can not read " << ren_file;
-    return false;
-  }
-  xb::info() << "prepare_handle_ren_files: From: " << from << " To: " << to;
-  rename_force(from, to);
-  if (xtrabackup_incremental) {
-    rename_force(from_base + ".delta", to_base + ".delta");
-    rename_force(from_base + ".meta", to_base + ".meta");
-  }
-  os_file_delete(0, ren_file.c_str());
-  return true;
-}
+//   std::string ren_file = entry.path;
+//   std::string ren_path = entry.rel_path;
+//   std::string from_base = entry.datadir;
+//   std::string to_base = entry.datadir;
+// #ifdef UNIV_DEBUG
+//   size_t index = ren_file.find(".ren");
+//   assert(index != std::string::npos);
+// #endif  // UNIV_DEBUG
+//   std::string from = ren_path.substr(0, ren_path.length() - 4);
+//   from_base += from;
+//   std::string to = read_file_as_string(ren_file);
+//   to_base += to;
+//   if (to.empty()) {
+//     xb::error() << "Can not read " << ren_file;
+//     return false;
+//   }
+//   xb::info() << "prepare_handle_ren_files: From: " << from << " To: " << to;
+//   rename_force(from, to);
+//   if (xtrabackup_incremental) {
+//     rename_force(from_base + ".delta", to_base + ".delta");
+//     rename_force(from_base + ".meta", to_base + ".meta");
+//   }
+//   os_file_delete(0, ren_file.c_str());
+//   return true;
+// }
 /* Handle DDL for deleted files */
 static bool prepare_handle_del_files(
     const datadir_entry_t &entry, /*!<in: datadir entry */

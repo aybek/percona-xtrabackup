@@ -5435,6 +5435,58 @@ static std::string read_file_as_string(const std::string file) {
   return std::string(content, len);
 }
 
+static void delete_force(const std::string &path) {
+  if (access(path.c_str(), R_OK) == 0) {
+    if (my_delete(path.c_str(), MYF(MY_WME))) {
+      exit(EXIT_FAILURE);
+    }
+  }
+}
+
+static void rename_file(const std::string &from, const std::string &to) {
+  if (my_rename(from.c_str(), to.c_str(), MY_WME)) {
+    xb::error() << "Can't rename " << from << " to " << to << " errno "
+                << errno;
+    exit(EXIT_FAILURE);
+  }
+}
+
+static void rename_force(const std::string &from, const std::string &to) {
+  MY_STAT stat_info;
+  if (access(to.c_str(), R_OK) == 0) {
+    if (my_delete(to.c_str(), MYF(MY_WME))) {
+      exit(EXIT_FAILURE);
+    }
+  }
+  /* check if dest folder exists */
+  std::string dest_dir = to.substr(0, to.find_last_of("/"));
+  /* create target dir if not exist */
+  if (!my_stat(dest_dir.c_str(), &stat_info, MYF(0)) &&
+      (my_mkdir(dest_dir.c_str(), 0750, MYF(0)) < 0)) {
+    xb::error() << "cannot mkdir: " << my_errno() << " " << dest_dir;
+    exit(EXIT_FAILURE);
+  }
+  rename_file(from, to);
+}
+
+/* Handle DDL for new files */
+static bool prepare_handle_new_files(
+    const datadir_entry_t &entry, /*!<in: datadir entry */
+    void *arg __attribute__((unused))) {
+  if (entry.is_empty_dir) return true;
+  std::string src_path = entry.path;
+  std::string dest_path = src_path;
+  xb::info() << "prepare_handle_new_files: " << src_path;
+  size_t index = dest_path.find(".new");
+#ifdef UNIV_DEBUG
+  assert(index != std::string::npos);
+#endif  // UNIV_DEBUG
+  dest_path.erase(index, 4);
+  rename_force(src_path, dest_path);
+
+  return true;
+}
+
 /************************************************************************
 Applies a given .ren file to the corresponding data file.
 example input: test/10.ibd.ren file with content = test/new_name.ibd ;
@@ -5488,6 +5540,17 @@ static bool xtrabackup_apply_ren(
       ut::free(space_name);
       return false;
     }
+    // rename .delta .meta files as well
+    if (xtrabackup_incremental) {
+      std::string path = entry.datadir + OS_PATH_SEPARATOR;
+      std::string from_delta = path + std::string{space_name} + ".delta";
+      std::string to_delta = path + std::string{tmpname} + ".delta";
+      std::string from_meta = path + std::string{space_name} + ".meta";
+      std::string to_meta = path + std::string{tmpname} + ".meta";
+
+      rename_force(from_delta, to_delta);
+      rename_force(from_meta, to_meta);
+    }
     // delete the .ren file, we don't need it anymore
     os_file_delete(0, ren_path.c_str());
     ut::free(oldpath);
@@ -5498,58 +5561,6 @@ static bool xtrabackup_apply_ren(
 
   xb::error() << "xtrabackup_apply_ren(): failed to apply " << ren_path;
   return false;
-}
-
-static void delete_force(const std::string &path) {
-  if (access(path.c_str(), R_OK) == 0) {
-    if (my_delete(path.c_str(), MYF(MY_WME))) {
-      exit(EXIT_FAILURE);
-    }
-  }
-}
-
-static void rename_file(const std::string &from, const std::string &to) {
-  if (my_rename(from.c_str(), to.c_str(), MY_WME)) {
-    xb::error() << "Can't rename " << from << " to " << to << " errno "
-                << errno;
-    exit(EXIT_FAILURE);
-  }
-}
-
-static void rename_force(const std::string &from, const std::string &to) {
-  MY_STAT stat_info;
-  if (access(to.c_str(), R_OK) == 0) {
-    if (my_delete(to.c_str(), MYF(MY_WME))) {
-      exit(EXIT_FAILURE);
-    }
-  }
-  /* check if dest folder exists */
-  std::string dest_dir = to.substr(0, to.find_last_of("/"));
-  /* create target dir if not exist */
-  if (!my_stat(dest_dir.c_str(), &stat_info, MYF(0)) &&
-      (my_mkdir(dest_dir.c_str(), 0750, MYF(0)) < 0)) {
-    xb::error() << "cannot mkdir: " << my_errno() << " " << dest_dir;
-    exit(EXIT_FAILURE);
-  }
-  rename_file(from, to);
-}
-
-/* Handle DDL for new files */
-static bool prepare_handle_new_files(
-    const datadir_entry_t &entry, /*!<in: datadir entry */
-    void *arg __attribute__((unused))) {
-  if (entry.is_empty_dir) return true;
-  std::string src_path = entry.path;
-  std::string dest_path = src_path;
-  xb::info() << "prepare_handle_new_files: " << src_path;
-  size_t index = dest_path.find(".new");
-#ifdef UNIV_DEBUG
-  assert(index != std::string::npos);
-#endif  // UNIV_DEBUG
-  dest_path.erase(index, 4);
-  rename_force(src_path, dest_path);
-
-  return true;
 }
 
 /* Handle DDL for renamed files */

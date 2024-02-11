@@ -231,8 +231,17 @@ void ddl_tracker_t::handle_ddl_operations() {
       new_tables[table.first] = table.second.second;
       continue;
     }
-    backup_file_printf((table.second.first + ".ren").c_str(), "%s",
-                       table.second.second.c_str());
+
+    auto sep = table.second.first.find_last_of(Fil_path::SEPARATOR);
+    char ren_file_name[FN_REFLEN];
+    // schema/spaceid.ibd.ren
+    snprintf(ren_file_name, FN_REFLEN, "%s%d%s",
+             table.second.first.substr(0, sep + 1).c_str(), table.first,
+             ".ibd.ren");
+
+    // std::string ren_file_name = table.second.first.substr(0, sep + 1) + 
+    //                             std::to_string(table.first) + ".ibd.ren";
+    backup_file_printf(ren_file_name, "%s", table.second.second.c_str());
   }
 
   fil_close_all_files();

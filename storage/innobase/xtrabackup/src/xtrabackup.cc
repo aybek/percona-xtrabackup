@@ -5423,6 +5423,83 @@ error:
   return false;
 }
 
+/** Read file content into STL string */
+static std::string read_file_as_string(const std::string file) {
+  char content[FN_REFLEN];
+  FILE *f = fopen(file.c_str(), "r");
+  if (!f) {
+    return "";
+  }
+  size_t len = fread(content, 1, FN_REFLEN, f);
+  fclose(f);
+  return std::string(content, len);
+}
+
+/************************************************************************
+Applies a given .ren file to the corresponding data file.
+example input: test/10.ibd.ren file with content = test/new_name.ibd ;
+      -> tablespace with space_id = 10 will be renamed to test/new_name.ibd
+@return true on success */
+static bool xtrabackup_apply_ren(
+    const datadir_entry_t &entry, /*!<in: datadir entry */
+    void * /*data*/) {
+
+  if (entry.is_empty_dir) return true;
+
+  char dest_space_name[FN_REFLEN];
+  space_id_t source_space_id;
+  std::string ren_file_content;
+  std::string ren_file = entry.file_name;
+  std::string ren_path = entry.path;
+
+  Fil_path::normalize(ren_path);
+  //trim .ibd.ren
+  source_space_id = atoi(ren_file.substr(0, ren_file.length() - 8).c_str());
+  ren_file_content = read_file_as_string(ren_path);
+
+  if (ren_file_content.empty()) {
+    xb::error() << ren_path << " is empty.";
+    return false;
+  }
+  //trim .ibd
+  snprintf(dest_space_name, FN_REFLEN, "%s",
+           ren_file_content.substr(0, ren_file_content.length() - 4).c_str());
+
+  fil_space_t *fil_space = fil_space_get(source_space_id);
+
+  if (fil_space != NULL) {
+    char tmpname[FN_REFLEN];
+    bool exists;
+    os_file_type_t type;
+    char *oldpath, *space_name;
+    bool res =
+        fil_space_read_name_and_filepath(fil_space->id, &space_name, &oldpath);
+    ut_a(res);
+    ut_a(os_file_status(oldpath, &exists, &type));
+    strncpy(tmpname, dest_space_name, sizeof(tmpname) - 1);
+
+    xb::info() << "Renaming " << fil_space->name << " to " << dest_space_name;
+
+    if (exists &&
+        !fil_rename_tablespace(fil_space->id, oldpath, tmpname, NULL)) {
+      xb::error() << "Cannot rename " << fil_space->name << " to "
+                  << dest_space_name;
+      ut::free(oldpath);
+      ut::free(space_name);
+      return false;
+    }
+    // delete the .ren file, we don't need it anymore
+    os_file_delete(0, ren_path.c_str());
+    ut::free(oldpath);
+    ut::free(space_name);
+
+    return true;
+  }
+
+  xb::error() << "xtrabackup_apply_ren(): failed to apply " << ren_path;
+  return false;
+}
+
 static void delete_force(const std::string &path) {
   if (access(path.c_str(), R_OK) == 0) {
     if (my_delete(path.c_str(), MYF(MY_WME))) {
@@ -5475,17 +5552,6 @@ static bool prepare_handle_new_files(
   return true;
 }
 
-/** Read file content into STL string */
-static std::string read_file_as_string(const std::string file) {
-  char content[FN_REFLEN];
-  FILE *f = fopen(file.c_str(), "r");
-  if (!f) {
-    return "";
-  }
-  size_t len = fread(content, 1, FN_REFLEN, f);
-  fclose(f);
-  return std::string(content, len);
-}
 /* Handle DDL for renamed files */
 static bool prepare_handle_ren_files(
     const datadir_entry_t &entry, /*!<in: datadir entry */
@@ -6623,9 +6689,9 @@ skip_check:
   xb_process_datadir(
       xtrabackup_incremental_dir ? xtrabackup_incremental_dir : ".", ".del",
       prepare_handle_del_files, NULL);
-  xb_process_datadir(
-      xtrabackup_incremental_dir ? xtrabackup_incremental_dir : ".", ".ren",
-      prepare_handle_ren_files, NULL);
+  // xb_process_datadir(
+  //     xtrabackup_incremental_dir ? xtrabackup_incremental_dir : ".", ".ren",
+  //     prepare_handle_ren_files, NULL);
   if (xtrabackup_incremental_dir) {
     /** This is the new file, this might be less than the original .ibd because
      * we are copying the file while there are still dirty pages in the BP.
@@ -6714,7 +6780,23 @@ skip_check:
   xb_normalize_init_values();
 
   Tablespace_map::instance().deserialize("./");
+//-------------------------------------------------------
+  err = xb_data_files_init();
+  if (err != DB_SUCCESS) {
+    xb::error() << "xb_data_files_init() failed "
+                << "with error code " << err;
+    goto error_cleanup;
+  }
 
+  if (!xb_process_datadir(
+      xtrabackup_incremental_dir ? xtrabackup_incremental_dir : ".", ".ren",
+      xtrabackup_apply_ren, NULL)) {
+        xb_data_files_close();
+        xb_filter_hash_free(inc_dir_tables_hash);
+        goto error_cleanup;
+  }
+  xb_data_files_close();
+//-------------------------------------------------------
   if (xtrabackup_incremental) {
     Tablespace_map::instance().deserialize(xtrabackup_incremental_dir);
     err = xb_data_files_init();

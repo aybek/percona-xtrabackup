@@ -5543,13 +5543,10 @@ static bool xtrabackup_apply_ren(
     // rename .delta .meta files as well
     if (xtrabackup_incremental) {
       std::string from_path = entry.datadir + OS_PATH_SEPARATOR + std::string{space_name};
-      std::string from_delta = from_path  + ".ibd.delta";
-      std::string to_delta = entry.datadir + ren_file_content + ".delta";
-      std::string from_meta = from_path +  ".ibd.meta";
-      std::string to_meta = entry.datadir + ren_file_content + ".meta";
+      std::string to_path = entry.datadir + ren_file_content;
 
-      rename_force(from_delta, to_delta);
-      rename_force(from_meta, to_meta);
+      rename_force(from_path + ".ibd.delta", to_path + ".delta");
+      rename_force(from_path + ".ibd.meta", to_path + ".meta");
     }
     // delete the .ren file, we don't need it anymore
     os_file_delete(0, ren_path.c_str());

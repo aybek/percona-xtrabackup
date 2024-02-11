@@ -6796,6 +6796,12 @@ skip_check:
         goto error_cleanup;
   }
   xb_data_files_close();
+  trx_pool_close();
+  fil_close();
+  os_thread_close();
+  sync_check_close();
+  os_event_global_destroy();
+
   xb::info() << "Processing .ren files completed!";
 //-------------------------------------------------------
   if (xtrabackup_incremental) {
@@ -6835,7 +6841,7 @@ skip_check:
   os_event_global_destroy();
 
   innodb_free_param();
-
+  
   /* Reset the configuration as it might have been changed by
   xb_data_files_init(). */
   if (innodb_init_param()) {

@@ -48,7 +48,7 @@ run_cmd_expect_failure $XB_BIN $XB_ARGS --backup --safe-slave-backup \
 
 # Check that the SQL thread is running
 run_cmd $MYSQL $MYSQL_ARGS -e "SHOW REPLICA STATUS\G" |
-  egrep 'Slave_SQL_Running:[[:space:]]+Yes'
+  egrep 'Replica_SQL_Running:[[:space:]]+Yes'
 
 ################################################################################
 # Now check if the SQL thread is left in the stopped state
@@ -63,6 +63,6 @@ run_cmd_expect_failure $XB_BIN $XB_ARGS --backup --safe-slave-backup \
 
 # Check that the SQL thread is stopped
 run_cmd $MYSQL $MYSQL_ARGS -e "SHOW REPLICA STATUS\G" |
-  egrep 'Slave_SQL_Running:[[:space:]]+No'
+  egrep 'Replica_SQL_Running:[[:space:]]+No'
 
 kill -SIGKILL $job_master

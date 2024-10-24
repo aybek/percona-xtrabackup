@@ -51,9 +51,11 @@ class ddl_tracker_t {
   /** Tablespaces involved in encryption or bulk index load.*/
   std::unordered_set<space_id_t> recopy_tables;
   /** Drop operations found in redo log. */
-  space_id_to_name_t drops;
+  std::unordered_map<space_id_t, std::pair<std::string, ulint>> drops;
   /* For DDL operation found in redo log,  */
-  std::unordered_map<space_id_t, std::pair<std::string, std::string>> renames;
+  std::unordered_map<space_id_t,
+                     std::pair<std::pair<std::string, std::string>, ulint>>
+      renames;
   /** Tables that have been deleted between discovery and file open */
   std::unordered_set<std::string> missing_after_discovery;
   /** Tables that have been renamed during scan. Tablespace_id and new table

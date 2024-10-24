@@ -209,11 +209,16 @@ void ddl_tracker_t::add_rename_table_from_redo(const space_id_t space_id,
   }
 
   std::lock_guard<std::mutex> lock(m_ddl_tracker_mutex);
+
+  ulint space_flags = fil_space_get_flags(space_id);
+
   if (renames.find(space_id) != renames.end()) {
-    renames[space_id].second = new_space_name;
+    renames[space_id].first.second = new_space_name;
   } else {
-    renames[space_id] = std::make_pair(old_space_name, new_space_name);
+    renames[space_id].first = std::make_pair(old_space_name, new_space_name);
+    renames[space_id].second = space_flags;
   }
+
   xb::info() << "DDL tracking : LSN: " << record_lsn
              << " rename space ID: " << space_id << " From: " << old_space_name
              << " To: " << new_space_name;
@@ -242,7 +247,10 @@ void ddl_tracker_t::add_drop_table_from_redo(const space_id_t space_id,
   }
 
   std::lock_guard<std::mutex> lock(m_ddl_tracker_mutex);
-  drops[space_id] = new_space_name;
+
+  ulint space_flags = fil_space_get_flags(space_id);
+
+  drops[space_id] = {new_space_name, space_flags};
 
   xb::info() << "DDL tracking : LSN: " << record_lsn
              << " delete space ID: " << space_id << " Name: " << new_space_name;
@@ -390,7 +398,13 @@ static void copy_for_reduced(copy_thread_ctxt_t *ctxt) {
  */
 static std::string convert_file_name(const space_id_t space_id,
                                      const std::string &file_path,
+                                     ulint space_flags,
                                      const std::string &ext) {
+  if (fsp_is_undo_tablespace(space_id) ||
+      !fsp_is_file_per_table(space_id, space_flags)) {
+    return std::to_string(space_id) + ext;
+  }
+
   char *space_name = fil_path_to_space_name(file_path.c_str());
   auto free_guard = create_scope_guard([&]() {
     if (space_name != nullptr) ut::free(space_name);
@@ -548,8 +562,10 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
       if (renames.find(table) != renames.end()) {
         // We never create .del for ibdata*
         ut_ad(!fsp_is_system_tablespace(table));
+        std::string old_table_name = renames[table].first.first;
+        ulint flags = renames[table].second;
         backup_file_printf(
-            convert_file_name(table, renames[table].first, EXT_DEL).c_str(),
+            convert_file_name(table, old_table_name, flags, EXT_DEL).c_str(),
             "%s", "");
       }
       string name = tables_copied_no_lock[table];
@@ -559,7 +575,8 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
 
   for (auto &table : drops) {
     space_id_t space_id = table.first;
-    std::string table_name = table.second;
+    std::string table_name = table.second.first;
+    ulint flags = table.second.second;
 
     if (check_if_skip_table(table_name.c_str())) {
       continue;
@@ -580,14 +597,16 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
 
     // We never create .del for ibdata*
     ut_ad(!fsp_is_system_tablespace(space_id));
-    backup_file_printf(convert_file_name(space_id, table_name, EXT_DEL).c_str(),
-                       "%s", "");
+    backup_file_printf(
+        convert_file_name(space_id, table_name, flags, EXT_DEL).c_str(), "%s",
+        "");
   }
 
   for (auto &table : renames) {
     space_id_t space_id = table.first;
-    std::string old_table_name = table.second.first;
-    std::string new_table_name = table.second.second;
+    std::string old_table_name = table.second.first.first;
+    std::string new_table_name = table.second.first.second;
+    ulint flags = table.second.second;
 
     if (check_if_skip_table(new_table_name.c_str())) {
       continue;
@@ -615,8 +634,8 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
     }
 
     backup_file_printf(
-        convert_file_name(space_id, old_table_name, EXT_REN).c_str(), "%d\n%s",
-        REN_FILE_VERSION, new_table_name.c_str());
+        convert_file_name(space_id, old_table_name, flags, EXT_REN).c_str(),
+        "%d\n%s", REN_FILE_VERSION, new_table_name.c_str());
   }
 
   for (auto table = new_tables.begin(); table != new_tables.end();) {
@@ -692,7 +711,8 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
   // Create .del files for deleted undo tablespaces
   for (auto &elem : deleted_undo_files) {
     backup_file_printf(
-        convert_file_name(elem.second, elem.first, EXT_DEL).c_str(), "%s", "");
+        convert_file_name(elem.second, elem.first, 0, EXT_DEL).c_str(), "%s",
+        "");
   }
 
   // Add new undo files to be recopied

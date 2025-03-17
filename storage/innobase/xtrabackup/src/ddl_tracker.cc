@@ -145,16 +145,14 @@ void ddl_tracker_t::add_to_recopy_tables(space_id_t space_id, lsn_t record_lsn,
              << " on space ID: " << space_id;
 }
 
-void ddl_tracker_t::add_missing_after_discovery(std::string path) {
+void ddl_tracker_t::add_missing_after_discovery(const space_id_t space_id) {
   ut_ad(!handle_ddl_ops);
 
-  Fil_path::normalize(path);
-  if (Fil_path::has_prefix(path, Fil_path::DOT_SLASH)) {
-    path.erase(0, strlen(Fil_path::DOT_SLASH));
-  }
-
   std::lock_guard<std::mutex> lock(m_ddl_tracker_mutex);
-  missing_after_discovery.insert(path);
+  missing_after_discovery.insert(space_id);
+
+  xb::info() << " missing space ID: " << space_id;
+  ;
 }
 
 void ddl_tracker_t::add_create_table_from_redo(const space_id_t space_id,
@@ -247,10 +245,6 @@ void ddl_tracker_t::add_drop_table_from_redo(const space_id_t space_id,
 
   xb::info() << "DDL tracking : LSN: " << record_lsn
              << " delete space ID: " << space_id << " Name: " << new_space_name;
-}
-
-bool ddl_tracker_t::is_missing_after_discovery(const std::string &name) {
-  return missing_after_discovery.count(name) != 0;
 }
 
 void ddl_tracker_t::add_rename_ibd_scan(const space_id_t &space_id,
@@ -580,6 +574,9 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
     }
     /* Remove from rename */
     renames.erase(space_id);
+
+    /* Remove from missing */
+    missing_after_discovery.erase(space_id);
 
     /* Remove from new tables and skip drop*/
     if (new_tables.find(space_id) != new_tables.end()) {

@@ -3214,7 +3214,7 @@ bool xtrabackup_copy_datafile_func(fil_node_t *node, uint thread_n,
     goto skip;
   } else if (res == XB_FIL_CUR_MISSING) {
     ddl_tracker->add_missing_after_discovery(cursor.space_id);
-    goto error;
+    goto skip;
   } else if (res == XB_FIL_CUR_ERROR) {
     goto error;
   }
@@ -3253,10 +3253,11 @@ bool xtrabackup_copy_datafile_func(fil_node_t *node, uint thread_n,
   action = xb_get_copy_action();
 
   if (xtrabackup_stream) {
-    xb::info() << action << " " << node->space->id << " " << node_path;
+    xb::info() << action << " with space_id " << node->space->id << " "
+               << node_path;
   } else {
-    xb::info() << action << " " << node->space->id << " " << node_path << " to "
-               << dstfile->path;
+    xb::info() << action << " with space_id " << node->space->id << " "
+               << node_path << " to " << dstfile->path;
   }
 
   /* The main copy loop */
@@ -3282,8 +3283,8 @@ bool xtrabackup_copy_datafile_func(fil_node_t *node, uint thread_n,
     xb::info() << "Done: " << action << " " << node->space->id << " "
                << node_path;
   } else {
-    xb::info() << "Done: " << action << " " << node->space->id << " "
-               << node_path << " to " << dstfile->path;
+    xb::info() << "Done: " << action << " with space_id " << node->space->id
+               << " " << node_path << " to " << dstfile->path;
   }
 
   xb_fil_cur_close(&cursor);
@@ -3390,13 +3391,8 @@ static void data_copy_thread_func(data_thread_ctxt_t *ctxt) {
       }
     } else {
       // failure
-      if (ddl_tracker != nullptr && opt_lock_ddl == LOCK_DDL_REDUCED) {
-        // ingore failure and continue, we should ideally track these..
-        continue;
-      } else {
-        xb::error() << "failed to copy datafile " << node->name;
-        *(ctxt->error) = true;
-      }
+      xb::error() << "failed to copy datafile " << node->name;
+      *(ctxt->error) = true;
     }
   }
 

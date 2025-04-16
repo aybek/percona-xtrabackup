@@ -13,6 +13,7 @@ ulimit -n 1024
 start_server
 
 $MYSQL $MYSQL_ARGS -Ns -e "CREATE TABLE test.drop_table (id INT PRIMARY KEY AUTO_INCREMENT); INSERT INTO test.drop_table VALUES(1);" test
+$MYSQL $MYSQL_ARGS -Ns -e "CREATE TABLE test.drop_create_same_name_table (id INT PRIMARY KEY AUTO_INCREMENT); INSERT INTO test.drop_create_same_name_table VALUES(1);" test
 $MYSQL $MYSQL_ARGS -Ns -e "CREATE TABLE test.rename_table (id INT PRIMARY KEY AUTO_INCREMENT); INSERT INTO test.rename_table VALUES(1);" test
 $MYSQL $MYSQL_ARGS -Ns -e "CREATE TABLE test.alter_rename_table (id INT PRIMARY KEY AUTO_INCREMENT); INSERT INTO test.alter_rename_table VALUES(1)" test
 $MYSQL $MYSQL_ARGS -Ns -e "CREATE TABLE test.alter_drop_column_table (id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(50)); INSERT INTO test.alter_drop_column_table VALUES(1, 'test')" test
@@ -35,7 +36,9 @@ echo "backup pid is $job_pid"
 
 # Delete table
 run_cmd $MYSQL $MYSQL_ARGS -Ns -e "DROP TABLE test.drop_table;" test
-
+run_cmd $MYSQL $MYSQL_ARGS -Ns -e "DROP TABLE test.drop_create_same_name_table;" test
+# Create table and generate redo; Table name is same as the one that was dropped but different space id; This should cause space_id mismatch and added to missing list 
+$MYSQL $MYSQL_ARGS -Ns -e "CREATE TABLE test.drop_create_same_name_table (id INT PRIMARY KEY AUTO_INCREMENT); INSERT INTO test.drop_create_same_name_table VALUES(1);" test
 # Rename table and generate redo
 $MYSQL $MYSQL_ARGS -Ns -e "RENAME TABLE test.rename_table TO test.new_rename_table; INSERT INTO test.new_rename_table VALUES(2);" test
 # Alter table rename and generate redo
@@ -58,6 +61,14 @@ fi
 
 if ! egrep -q "DDL tracking : LSN: [0-9]* rename space ID: [0-9]* From: test/alter_rename_table.ibd To: test/new_alter_rename_table.ibd" $topdir/backup.log ; then
     die "xtrabackup did not handle alter table rename DDL"
+fi
+
+if ! egrep -q "DDL tracking: missing after discovery space ID: [0-9]*" $topdir/backup.log ; then
+    die "xtrabackup did not add dropped table to missing list"
+fi
+
+if ! egrep -q "DDL tracking: missing after discovery space ID: [0-9]*" $topdir/backup.log ; then
+    die "xtrabackup did not add dropped table to missing list"
 fi
 
 xtrabackup --prepare --target-dir=$topdir/backup

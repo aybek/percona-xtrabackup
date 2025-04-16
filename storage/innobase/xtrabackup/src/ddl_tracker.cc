@@ -151,7 +151,7 @@ void ddl_tracker_t::add_missing_after_discovery(const space_id_t space_id) {
   std::lock_guard<std::mutex> lock(m_ddl_tracker_mutex);
   missing_after_discovery.insert(space_id);
 
-  xb::info() << " missing space ID: " << space_id;
+  xb::info() << " DDL tracking: missing after discovery space ID: " << space_id;
   ;
 }
 
@@ -450,6 +450,14 @@ std::tuple<filevec, filevec> findChanges(const name_to_space_id_t &before,
   return {newFiles, deletedOrChangedFiles};
 }
 
+ulint get_space_flags(
+    const space_id_t space_id,
+    const std::unordered_map<space_id_t, std::pair<std::string, ulint>>
+        &tables_copied_no_lock) {
+  auto it = tables_copied_no_lock.find(space_id);
+  return (it != tables_copied_no_lock.end()) ? it->second.second : 0;
+}
+
 std::tuple<filevec, filevec> ddl_tracker_t::handle_undo_ddls() {
   xb::info() << "DDL tracking: handling undo DDLs";
 
@@ -542,6 +550,12 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
     }
   }
 
+  for (auto &table : missing_after_discovery) {
+    if (tables_copied_no_lock.find(table) != tables_copied_no_lock.end()) {
+      tables_copied_no_lock.erase(table);
+    }
+  }
+
   /* recopy_tables will be handled as follow:
     * not in the backup - nothign to do. This is a new table that was created
      during the backup. It will be re-copied anyway as .new in the backup.
@@ -555,13 +569,13 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
         // We never create .del for ibdata*
         ut_ad(!fsp_is_system_tablespace(table));
         std::string old_table_name = renames[table].first;
-        ulint flags = tables_copied_no_lock[table].second;
+        ulint flags = get_space_flags(table, tables_copied_no_lock);
         backup_file_printf(
             convert_file_name(table, old_table_name, flags, EXT_DEL).c_str(),
             "%s", "");
       }
-      string name = tables_copied_no_lock[table].first;
-      new_tables[table] = name;
+      string table_name = tables_copied_no_lock[table].first;
+      new_tables[table] = table_name;
     }
   }
 
@@ -589,7 +603,7 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
       continue;
     }
 
-    ulint flags = tables_copied_no_lock[space_id].second;
+    ulint flags = get_space_flags(space_id, tables_copied_no_lock);
 
     // We never create .del for ibdata*
     ut_ad(!fsp_is_system_tablespace(space_id));
@@ -629,7 +643,7 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
       continue;
     }
 
-    ulint flags = tables_copied_no_lock[space_id].second;
+    ulint flags = get_space_flags(space_id, tables_copied_no_lock);
 
     backup_file_printf(
         convert_file_name(space_id, old_table_name, flags, EXT_REN).c_str(),
@@ -708,7 +722,7 @@ dberr_t ddl_tracker_t::handle_ddl_operations() {
 
   // Create .del files for deleted undo tablespaces
   for (auto &elem : deleted_undo_files) {
-    ulint flags = tables_copied_no_lock[elem.second].second;
+    ulint flags = get_space_flags(elem.second, tables_copied_no_lock);
     backup_file_printf(
         convert_file_name(elem.second, elem.first, flags, EXT_DEL).c_str(),
         "%s", "");
